@@ -390,7 +390,7 @@ app.get("/api/profiles/search", async(req, res) => {
 
     try{
         const countResult = await pool.query(countQuery, [...params])
-        const total = countResult.rows[0].count
+        const total = parseInt(countResult.rows[0].count)
         const result = await pool.query(sqlQuery, [...params, limitNum, offset]);
 
         return res.status(200).json({
