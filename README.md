@@ -1,6 +1,6 @@
-# HNG Stage 1 - Name Profile API
+# HNG Stage 2 - Intelligence Query Engine API
 
-A REST API that accepts a name, calls three external APIs, processes the data, stores it in a PostgreSQL database, and exposes endpoints to manage the profiles.
+A REST API that stores demographic profiles and supports advanced filtering, sorting, pagination, and natural language search.
 
 ## Tech Stack
 - Node.js
@@ -9,41 +9,37 @@ A REST API that accepts a name, calls three external APIs, processes the data, s
 - Axios
 - UUID v7
 
-## External APIs Used
-- Genderize.io - gender prediction
-- Agify.io - age prediction
-- Nationalize.io - nationality prediction
-
 ## Endpoints
-
-### Create Profile
-POST /api/profiles
-Body: { "name": "ella" }
 
 ### Get All Profiles
 GET /api/profiles
-Optional filters: ?gender=female&country_id=NG&age_group=adult
+
+Supports filtering, sorting, and pagination:
+- gender=male|female
+- age_group=child|teenager|adult|senior
+- country_id=NG|KE|GH (ISO 2-letter code)
+- min_age=20
+- max_age=40
+- min_gender_probability=0.9
+- min_country_probability=0.5
+- sort_by=age|created_at|gender_probability
+- order=asc|desc
+- page=1 (default: 1)
+- limit=10 (default: 10, max: 50)
+
+Example:
+/api/profiles?gender=male&country_id=NG&min_age=25&sort_by=age&order=desc&page=1&limit=10
+
+### Natural Language Search
+GET /api/profiles/search?q={query}
+
+Parses plain English queries into filters.
+
+Example:
+/api/profiles/search?q=young males from nigeria
 
 ### Get Single Profile
 GET /api/profiles/:id
 
-### Delete Profile
-DELETE /api/profiles/:id
-
-## Running Locally
-
-1. Clone the repo
-   git clone https://github.com/yourusername/yourreponame.git
-   cd yourreponame
-
-2. Install dependencies
-   npm install
-
-3. Create a .env file
-   DATABASE_URL=your_supabase_connection_string
-
-4. Run the server
-   node main.js
-
-5. Test it
-   http://localhost:3000/api/profiles
+### Create Profile
+POST /api/profiles
