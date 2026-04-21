@@ -2,7 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios")
 const { v7: uuidv7 } = require('uuid')
-const pool = require("./db")
+const pool = require("./db");
+const { parse } = require("dotenv");
 require("dotenv").config()
 
 const app = express();
@@ -24,11 +25,11 @@ const formatProfile = (row) => {
         name: row.name,
         gender: row.gender,
         gender_probability: row.gender_probability,
-        sample_size: row.sample_size,
         age: row.age,
         age_group: row.age_group,
        country_id: row.country_id,
        country_probability: row.country_probability,
+       country_name: row.country_name,
        created_at: row.created_at
     }
 }
@@ -120,16 +121,16 @@ app.post("/api/profiles", async (req, res) => {
     
         const country_id = topCountry.country_id
         const country_probability = topCountry.probability
+        const country_name = topCountry.country_name || ''
     
         const id = uuidv7()
-        const created_at = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
     
         // Save to database
         await pool.query(
             `INSERT INTO profiles 
-              (id, name, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-            [id, cleanName, gender, gender_probability, sample_size, age, age_group, country_id, country_probability, created_at]
+              (id, name, gender, gender_probability, age, age_group, country_id, country_probability,country_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [id, cleanName, gender, gender_probability, age, age_group, country_id, country_probability, country_name]
         )
 
         return res.status(201).json({
@@ -139,11 +140,11 @@ app.post("/api/profiles", async (req, res) => {
               name: cleanName,
               gender,
               gender_probability,
-              sample_size,
               age,
               age_group,
               country_id,
               country_probability,
+              country_name,
               created_at
             }
         })
@@ -158,33 +159,249 @@ app.post("/api/profiles", async (req, res) => {
     
 })
 app.get("/api/profiles", async(req, res) => {
-    const { gender, country_id, age_group } = req.query
+    const { 
+        gender, 
+        age_group,
+        country_id,
+        min_age,
+        max_age,
+        min_gender_probability,
+        min_country_probability,
+        sort_by,
+        order,
+        page,
+        limit
+      } = req.query
+
+      const allowedSortFields = ['age', 'created_at', 'gender_probability']
+      const allowedOrders = ['asc', 'desc']
+
+     if (sort_by && !allowedSortFields.includes(sort_by)) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Invalid query parameters'
+        })
+    }
+
+    if (order && !allowedOrders.includes(order.toLowerCase())) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Invalid query parameters'
+        })
+    }
+
+    const pageNum = parseInt(page)|| 1;
+    const limitNum = Math.min(parseInt(limit) || 10, 50)
+    const offset = (pageNum - 1) * limitNum;
 
     let query = "SELECT * FROM profiles WHERE 1=1"
+    let countQuery = "SELECT COUNT(*) FROM profiles WHERE 1=1"
     let params = []
 
     if(gender){
         params.push(gender.toLowerCase())
         query += ` AND LOWER(gender) = $${params.length}`
+        countQuery += ` AND LOWER(gender) = $${params.length}`
     }
     if (country_id) {
         params.push(country_id.toLowerCase())
         query += ` AND LOWER(country_id) = $${params.length}`
-      }
+        countQuery += ` AND LOWER(country_id) = $${params.length}`
+    }
     
-      if (age_group) {
+    if (age_group) {
         params.push(age_group.toLowerCase())
         query += ` AND LOWER(age_group) = $${params.length}`
-      }
+        countQuery += ` AND LOWER(age_group) = $${params.length}`
+    }
+    if (min_age) {
+        params.push(parseInt(min_age))
+        query += ` AND age >= $${params.length}`
+        countQuery += ` AND age >= $${params.length}`
+    }
+
+    if (max_age) {
+        params.push(parseInt(max_age))
+        query += ` AND age <= $${params.length}`
+        countQuery += ` AND age <= $${params.length}`
+    }
+
+    if (min_gender_probability) {
+        params.push(parseFloat(min_gender_probability))
+        query += ` AND gender_probability >= $${params.length}`
+        countQuery += ` AND gender_probability >= $${params.length}`
+    }
+
+    if (min_country_probability) {
+        params.push(parseFloat(min_country_probability))
+        query += ` AND country_probability >= $${params.length}`
+        countQuery += ` AND country_probability >= $${params.length}`
+    }
+
+    const sortField = allowedSortFields.includes(sort_by) ? sort_by : 'created_at'
+    const sortOrder = order && allowedOrders.includes(order.toLowerCase()) ? order.toUpperCase() : "ASC"
+    query += ` ORDER BY ${sortField} ${sortOrder}`
+     query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
       
     try{
-        const result = await pool.query(query, params);
+        const countResults = await pool.query(countQuery, [...params]);
+        const total = parseInt(countResults.rows[0].count)
+        const result = await pool.query(query, [...params, limitNum, offset]);
+
+        console.log('First row:', result.rows[0])
+        console.log('sortField:', sortField, 'sortOrder:', sortOrder)
+        console.log('Final query:', query)
         return res.status(200).json({
             status: 'success',
-            count: result.rows.length,
+            page: pageNum,
+            limit: limitNum,
+            total,
             data: result.rows.map(formatProfile)
         })
     }catch(err){
+        console.log(err.message)
+        return res.status(500).json({
+            status: "error",
+            message: "Database error"
+        })
+    }
+})
+// natural search
+
+app.get("/api/profiles/search", async(req, res) => {
+    const { q, page, limit } = req.query
+
+    if (!q || q.trim() === '') {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Missing or empty query'
+        })
+    }
+
+    const query = q.toLowerCase().trim();
+    let filters = {}
+    // detect gender word
+
+    const maleWords = ["guy", "guys", "boy", "boys", "man", "men", "male", "males"]
+    const femaleWords = ["girl", "woman", "women", "female", "females", "madam", "girls"]
+    if (femaleWords.some(word => query.includes(word))) {
+        filters.gender = 'female'
+    } else if (maleWords.some(word => query.includes(word))) {
+        filters.gender = 'male'
+    }
+    // country map
+    const countryMap = {
+        "nigeria": "NG",
+        "kenya": "KE",
+        "ghana": "GH",
+        "tanzania": "TZ",
+        "uganda": "UG",
+        "angola": "AO",
+        "cameroon": "CM",
+        "ethiopia": "ET",
+        "senegal": "SN",
+        "zimbabwe": "ZW",
+        "south africa": "ZA",
+        "ivory coast": "CI",
+        "mali": "ML",
+        "benin": "BJ",
+        "togo": "TG",
+        "rwanda": "RW",
+        "zambia": "ZM",
+        "mozambique": "MZ",
+        "madagascar": "MG",
+        "somalia": "SO"
+    }
+
+
+    // detect age group
+    if (query.includes('child') || query.includes('children')) filters.age_group = 'child'
+    if (query.includes('teenager') || query.includes('teenagers')) filters.age_group = 'teenager'
+    if (query.includes('adult') || query.includes('adults')) filters.age_group = 'adult'
+    if (query.includes('senior') || query.includes('seniors')) filters.age_group = 'senior'
+
+    if (query.includes('young')) {
+        filters.min_age = 16
+        filters.max_age = 24
+    }
+
+    const aboveMatch = query.match(/(?:above|over|older)[^0-9]*(\d+)/)
+    if (aboveMatch) filters.min_age = parseInt(aboveMatch[1]);
+
+    const belowMatch = query.match(/(?:below|under|younger)[^0-9]*(\d+)/);
+    if (belowMatch) filters.max_age = parseInt(belowMatch[1]);
+
+    for(const [country, countryCode ] of Object.entries(countryMap)){
+        if(query.includes(country)){
+            filters.country_id = countryCode
+        }
+    }
+
+    // if the filter doesnt return anything
+    if(Object.entries(filters).length === 0){
+        return res.status(400).json({
+            status: "error",
+            message: "Unable to interpret query"
+        })
+    }
+  
+    // pagination
+    const pageNum = parseInt(page) || 1;
+    const limitNum = Math.min(parseInt(limit) || 10, 50);
+    const offset = (pageNum - 1 ) * limitNum
+
+    // BUILD THE QUERY
+    let sqlQuery = "SELECT * FROM profiles WHERE 1=1"
+    let countQuery = "SELECT COUNT(*) FROM profiles WHERE 1=1"
+    let params = []
+
+    if(filters.gender){
+        params.push(filters.gender);
+        sqlQuery += ` AND LOWER(gender) = $${params.length}`
+        countQuery += ` AND LOWER(gender) = $${params.length}`
+    }
+
+    if(filters.age_group){
+        params.push(filters.age_group);
+        sqlQuery += ` AND LOWER(age_group) = $${params.length}`
+        countQuery += ` AND LOWER(age_group) = $${params.length}`
+    }
+
+    if(filters.country_id){
+        params.push(filters.country_id)
+        sqlQuery += ` AND (country_id) = $${params.length}`
+        countQuery += ` AND (country_id) = $${params.length}`
+    }
+
+    if(filters.min_age){
+        params.push(filters.min_age);
+        sqlQuery += ` AND (age) >= $${params.length}`
+        countQuery += ` AND (age) >= $${params.length}`
+    }
+
+    if(filters.max_age){
+        params.push(filters.max_age)
+        sqlQuery += ` AND (age) <= $${params.length}`
+        countQuery += ` AND (age) <= $${params.length}`
+    }
+
+    sqlQuery += ` ORDER BY created_at ASC`
+    sqlQuery += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
+
+    try{
+        const countResult = await pool.query(countQuery, [...params])
+        const total = countResult.rows[0].count
+        const result = await pool.query(sqlQuery, [...params, limitNum, offset]);
+
+        return res.status(200).json({
+            status: "success",
+            page: pageNum,
+            limit: limitNum,
+            total,
+            data: result.rows.map(formatProfile)
+        })
+    }catch(err){
+        console.log(err.message)
         return res.status(500).json({
             status: "error",
             message: "Database error"
