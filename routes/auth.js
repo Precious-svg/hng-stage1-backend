@@ -4,23 +4,26 @@ const expressRate = require("express-rate-limit");
 const axios = require("axios")
 const { v7: uuidv7 } = require('uuid')
 const pool = require("../db")
-const {generateAccessToken, generateAccessToken, generateRefreshToken} = require("../auth");
+const {generateAccessToken, generateRefreshToken} = require("../auth");
 const { token } = require("morgan");
 require("dotenv").config()
 
 
 router.get("/github", (req, res) => {
+    const isCLI = req.query.cli === 'true'
     const params = new URLSearchParams({
         client_id: process.env.GITHUB_CLIENT_ID,
         redirect_uri: process.env.GITHUB_CALLBACK_URL,
-        scope: 'user:email'
+        scope: 'user:email',
+        state: isCLI ? 'cli' : 'web'
     })
 
     res.redirect(`https://github.com/login/oauth/authorize?${params}`)
 })
 
 router.get("/github/callback", async (req, res) => {
-    const {code} = req.query
+   const { code, state } = req.query
+   const isCLI = state === 'cli'
 
     if(!code) return res.status(400).json({
         status: "error",
@@ -83,6 +86,13 @@ router.get("/github/callback", async (req, res) => {
 
         const accessToken = generateAccessToken(user);
         const refreshToken = generateRefreshToken(user)
+        // const isCLI = req.query.cli === 'true'
+
+      if (isCLI) {
+         return res.redirect(
+         `http://localhost:9876/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}`
+       )
+     }
 
         return res.status(200).json({
             status: "success",
