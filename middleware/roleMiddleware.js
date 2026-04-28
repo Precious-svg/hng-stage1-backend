@@ -10,4 +10,4 @@ function requireAdminMiddleware(req, res, next){
     next();
 }
 
-module.exports = removeEventListener;
+module.exports = requireAdminMiddleware;

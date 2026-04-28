@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken")
-const pool = require("../db")
+const pool = require("./db")
 const { v7: uuidv7 } = require('uuid')
 require("dotenv").config()
 

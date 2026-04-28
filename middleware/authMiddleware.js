@@ -13,7 +13,7 @@ async function authenticate(req, res, next){
         const decoded = verifyToken(token)
 
         const result = await pool.query(
-            'SELECT * FROMM users WHERE id = $1',
+            'SELECT * FROM users WHERE id = $1',
             [decoded.id]
         )
 
@@ -37,4 +37,4 @@ async function authenticate(req, res, next){
     }
 }
 
-module.exports = {authenticate}
+module.exports = authenticate
