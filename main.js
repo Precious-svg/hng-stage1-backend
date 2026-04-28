@@ -1,17 +1,28 @@
 const express = require("express");
 const cors = require("cors");
+const morgan = require('morgan')
+const authRouter = require('./routes/auth')
+const authenticate = require('./middleware/auth')
+const requireAdmin = require('./middleware/role')
+const requireApiVersion = require('./middleware/apiVersion')
 const axios = require("axios")
 const { v7: uuidv7 } = require('uuid')
 const pool = require("./db");
 const { parse } = require("dotenv");
+const {authLimiter, apiLimiter} = require("./utils/rateLimiter")
 require("dotenv").config()
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.use(morgan('dev'))
+app.use("/auth", authLimiter, authRouter)
+app.use("/api", apiLimiter, authenticate, requireApiVersion)
 
-// helper functions 
+
+
+// helper functions (profile functions)
 const getAgeGroup = (age) => {
     if(age <= 12) return "child";
     if(age <= 19) return "teenager";
@@ -34,7 +45,7 @@ const formatProfile = (row) => {
     }
 }
 
-app.post("/api/profiles", async (req, res) => {
+app.post("/api/profiles", requireAdmin, async (req, res) => {
   const { name } = req.body
   if(!name || name.trim() === ""){
     return res.status(400).json({
@@ -247,7 +258,13 @@ app.get("/api/profiles", async(req, res) => {
         const countResults = await pool.query(countQuery, [...params]);
         const total = parseInt(countResults.rows[0].count)
         const result = await pool.query(query, [...params, limitNum, offset]);
-
+        const totalPages = Math.ceil(total/limitNum)
+        const baseUrl = "/api/profiles"
+        const queryString = Object.entries(req.query)
+        .filter(([key]) => key !== page)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("&")
+        const seperator = queryString ? "&" : ''
         console.log('First row:', result.rows[0])
         console.log('sortField:', sortField, 'sortOrder:', sortOrder)
         console.log('Final query:', query)
@@ -256,6 +273,12 @@ app.get("/api/profiles", async(req, res) => {
             page: pageNum,
             limit: limitNum,
             total,
+            total_pages: totalPages,
+            links: {
+                self: `${baseUrl}?page=${pageNum}&limit=${limitNum}${seperator}${queryString}`,
+                next: pageNum < totalPages ? `${baseUrl}?page=${pageNum + 1}&limit=${limitNum}${seperator}${queryString}` : null,
+                prev: pageNum > 1 ? `${baseUrl}?page=${pageNum - 1}&limit=${limitNum}${seperator}${queryString}` : null
+            },
             data: result.rows.map(formatProfile)
         })
     }catch(err){
@@ -392,12 +415,20 @@ app.get("/api/profiles/search", async(req, res) => {
         const countResult = await pool.query(countQuery, [...params])
         const total = parseInt(countResult.rows[0].count)
         const result = await pool.query(sqlQuery, [...params, limitNum, offset]);
-
+        const baseUrl = "/api/profiles/search"
+        const encoded = encodeURIComponent(q)
+        const totalPages = Math.ceil(total/limitNum)
         return res.status(200).json({
             status: "success",
             page: pageNum,
             limit: limitNum,
             total,
+            total_pages: totalPages,
+            links: {
+                self: `${baseUrl}?q=${encoded}&page=${pageNum}&limit=${limitNum}`,
+                next: pageNum < totalPages ? `${baseUrl}?q=${encoded}&page=${pageNum + 1}&limit=${limitNum}` : null,
+                prev: pageNum > 1 ?  `${baseUrl}?q=${encoded}&page=${pageNum - 1}&limit=${limitNum}`: null
+            },
             data: result.rows.map(formatProfile)
         })
     }catch(err){
@@ -405,6 +436,97 @@ app.get("/api/profiles/search", async(req, res) => {
         return res.status(500).json({
             status: "error",
             message: "Database error"
+        })
+    }
+})
+
+// export profiles in csv fiormat
+app.get("/api/profiles/export", async(req, res) => {
+    const {
+        format,
+        gender, 
+        age_group,
+        country_id,
+        min_age,
+        max_age,
+        min_gender_probability,
+        min_country_probability,
+        sort_by,
+        order,
+        page,
+        limit
+    } = req.query
+    const allowedSortFields =  ['age', 'created_at', 'gender_probability']
+    const allowedOrders = ["asc", "desc"]
+
+    if(!format || format !== "csv") return res.status(400).json({
+        status: "error",
+        message: "Invalid or missing format parameter. Use format=csv"
+    })
+
+    let query = "SELECT * FROM profiles WHERE 1=1"
+    const params = []
+
+    if (gender) {
+        params.push(gender.toLowerCase())
+        query += ` AND LOWER(gender) = $${params.length}`
+    }
+
+    if (country_id) {
+        params.push(country_id.toUpperCase())
+        query += ` AND country_id = $${params.length}`
+    }
+
+    if (age_group) {
+        params.push(age_group.toLowerCase())
+        query += ` AND LOWER(age_group) = $${params.length}`
+    }
+
+    if (min_age) {
+        params.push(parseInt(min_age))
+        query += ` AND age >= $${params.length}`
+    }
+
+    if (max_age) {
+        params.push(parseInt(max_age))
+        query += ` AND age <= $${params.length}`
+    }
+
+    if (min_gender_probability) {
+        params.push(parseFloat(min_gender_probability))
+        query += ` AND gender_probability >= $${params.length}`
+    }
+
+    if (min_country_probability) {
+        params.push(parseFloat(min_country_probability))
+        query += ` AND country_probability >= $${params.length}`
+    }
+    const sortField = allowedSortFields.includes(sort_by) ? sort_by : 'created_at'
+    const sortOrder = order && allowedOrders.includes(order.toLowerCase()) ? order.toUpperCase() : 'ASC'
+    query += ` ORDER BY ${sortField} ${sortOrder}`
+
+    try{
+        const result = await pool.query(query, params)
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        const filename = `profiles_${timestamp}.csv`
+
+        // build csv
+        const headers = 'id,name,gender,gender_probability,age,age_group,country_id,country_name,country_probability,created_at'
+        
+        const rows = result.rows.map(row => 
+            `${row.id},${row.name},${row.gender},${row.gender_probability},${row.age},${row.age_group},${row.country_id},${row.country_name},${row.country_probability},${row.created_at}`
+        ).join('\n')
+
+        const csv = `${headers}\n${rows}`
+        res.setHeader('Content-Type', 'text/csv')
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+        return res.status(200).send(csv)
+    }catch(err){
+        console.log(err.message)
+        return res.status(500).json({
+            status: 'error',
+            message: 'Export failed'
         })
     }
 })
@@ -438,7 +560,7 @@ app.get("/api/profiles/:id", async(req, res) => {
 })
 
 // delete a profile
-app.delete("/api/profiles/:id", async(req,res) => {
+app.delete("/api/profiles/:id", requireAdmin, async(req,res) => {
     const {id} = req.params
 
     try{
