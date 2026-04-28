@@ -42,6 +42,8 @@ router.get("/github/callback", async (req, res) => {
          },
          {headers: {Accept: "application/json"}}
         )
+        console.log('Token response status:', tokenRes.status)
+         console.log('Token response data:', tokenRes.data)
 
         const githubAccesstoken = tokenRes.data.access_token
         if(!githubAccesstoken) return res.status(401).json({
@@ -49,7 +51,7 @@ router.get("/github/callback", async (req, res) => {
             message: "No github token provided"
         })
     
-        const userRes = await axios.post("https://api.github.com/user", {
+        const userRes = await axios.get("https://api.github.com/user", {
             headers: {Authorization: `Bearer ${githubAccesstoken}`}
         })
 
