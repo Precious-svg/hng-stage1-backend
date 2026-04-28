@@ -35,8 +35,8 @@ router.get("/github/callback", async (req, res) => {
 
     try{
         const tokenRes = await axios.post('https://github.com/login/oauth/access_token', {
-            client_id: process.env.GITHUB_CLIENT_ID,
-            client_secret: process.env.GITHUB_CLIENT_SECRET,
+            client_id: process.env.CLIENT_ID,
+            client_secret: process.env.CLIENT_SECRET,
              code,
             redirect_uri: process.env.GITHUB_CALLBACK_URL
          },
