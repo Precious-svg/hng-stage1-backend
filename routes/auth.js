@@ -12,7 +12,7 @@ require("dotenv").config()
 router.get("/github", (req, res) => {
     const isCLI = req.query.cli === 'true'
     const params = new URLSearchParams({
-        client_id: process.env.GITHUB_CLIENT_ID,
+        client_id: process.env.CLIENT_ID,
         redirect_uri: process.env.GITHUB_CALLBACK_URL,
         scope: 'user:email',
         state: isCLI ? 'cli' : 'web'
