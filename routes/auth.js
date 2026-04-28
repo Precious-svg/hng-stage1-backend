@@ -18,7 +18,10 @@ router.get("/github", (req, res) => {
         state: isCLI ? 'cli' : 'web'
     })
 
-    res.redirect(`https://github.com/login/oauth/authorize?${params}`)
+    const url = `https://github.com/login/oauth/authorize?${params}`
+    console.log('Redirecting to:', url)
+    res.redirect(url)
+
 })
 
 router.get("/github/callback", async (req, res) => {
