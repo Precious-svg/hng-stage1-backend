@@ -42,7 +42,9 @@ router.get("/github/callback", async (req, res) => {
          },
          {headers: {Accept: "application/json"}}
         )
+        console.log('Step 1 - token response:', tokenRes.data)
         const githubAccesstoken = tokenRes.data.access_token
+        console.log('Step 2 - github token:', githubAccesstoken ? 'exists' : 'missing')
         if(!githubAccesstoken) return res.status(401).json({
             status: "error",
             message: "No github token provided"
@@ -53,6 +55,7 @@ router.get("/github/callback", async (req, res) => {
         })
 
         const githubUser = userRes.data
+        console.log('Step 3 - github user:', userRes.data.login)
 
         const existing = await pool.query(
             `SELECT * FROM users WHERE github_id = $1`,
@@ -111,7 +114,7 @@ router.get("/github/callback", async (req, res) => {
         //     }
         // })
     }catch(err){
-        console.log(err.message)
+        console.log("error msg", err.message)
         console.log('Full error:', err.response?.data || err.message)
         return res.status(500).json({
             status: 'error',
