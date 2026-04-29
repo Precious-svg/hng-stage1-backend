@@ -1,45 +1,121 @@
-# HNG Stage 2 - Intelligence Query Engine API
+# Insighta Labs+ Backend
 
-A REST API that stores demographic profiles and supports advanced filtering, sorting, pagination, and natural language search.
+A secure, multi-interface demographic intelligence API built for Insighta Labs.
 
+## System Architecture
+CLI (insighta-cli) ──────┐
+├──► Backend API ──► PostgreSQL (Neon)
+Web Portal (insighta-web)─┘         │
+└──► External APIs (Genderize, Agify, Nationalize)
 ## Tech Stack
-- Node.js
-- Express
-- PostgreSQL (Supabase)
-- Axios
-- UUID v7
+- Node.js + Express
+- PostgreSQL (Neon)
+- JWT (Access + Refresh tokens)
+- GitHub OAuth 2.0 with PKCE state validation
+
+## Authentication Flow
+
+1. User hits `GET /auth/github`
+2. Backend redirects to GitHub OAuth page
+3. User authorizes
+4. GitHub redirects to `GET /auth/github/callback`
+5. Backend exchanges code for GitHub token
+6. Backend fetches user info from GitHub
+7. Backend creates or updates user in database
+8. Backend issues access token (3min) + refresh token (5min)
+9. CLI → tokens returned via redirect to localhost:9876
+10. Web → tokens returned via redirect to web portal /auth/callback
+
+## Token Handling
+
+- Access token expires in 3 minutes — sent with every API request as `Authorization: Bearer <token>`
+- Refresh token expires in 5 minutes — sent to `POST /auth/refresh` to get new token pair
+- Old refresh token is destroyed immediately after use
+- Expired tokens are cleaned up automatically every 10 minutes
+
+## Role Enforcement
+
+- `admin` — full access: create, delete, read, search profiles
+- `analyst` — read only: can only read and search profiles
+- Default role on signup: `analyst`
+- Roles are enforced via middleware on every `/api/*` endpoint
+- Inactive users (`is_active: false`) get 403 on all requests including token refresh
+
+## API Versioning
+
+All `/api/*` endpoints require the header:
+X-API-Version: 1
+
+Requests without this header return 400.
+
+## Rate Limiting
+
+- Auth endpoints: 10 requests/minute
+- API endpoints: 60 requests/minute per user
+- Returns 429 when exceeded
 
 ## Endpoints
 
-### Get All Profiles
-GET /api/profiles
+### Auth
+- `GET /auth/github` — redirect to GitHub login
+- `GET /auth/github/callback` — OAuth callback
+- `POST /auth/refresh` — refresh tokens
+- `POST /auth/logout` — invalidate refresh token
 
-Supports filtering, sorting, and pagination:
-- gender=male|female
-- age_group=child|teenager|adult|senior
-- country_id=NG|KE|GH (ISO 2-letter code)
-- min_age=20
-- max_age=40
-- min_gender_probability=0.9
-- min_country_probability=0.5
-- sort_by=age|created_at|gender_probability
-- order=asc|desc
-- page=1 (default: 1)
-- limit=10 (default: 10, max: 50)
+### Profiles
+- `GET /api/profiles` — list with filtering, sorting, pagination
+- `GET /api/profiles/search?q=` — natural language search
+- `GET /api/profiles/export?format=csv` — export as CSV
+- `POST /api/profiles` — create profile (admin only)
+- `GET /api/profiles/:id` — get single profile
+- `DELETE /api/profiles/:id` — delete profile (admin only)
 
-Example:
-/api/profiles?gender=male&country_id=NG&min_age=25&sort_by=age&order=desc&page=1&limit=10
+## Filtering
 
-### Natural Language Search
-GET /api/profiles/search?q={query}
+GET /api/profiles supports:
+- gender, age_group, country_id
+- min_age, max_age
+- min_gender_probability, min_country_probability
+- sort_by (age, created_at, gender_probability)
+- order (asc, desc)
+- page, limit (max 50)
 
-Parses plain English queries into filters.
+## Natural Language Parsing
 
-Example:
-/api/profiles/search?q=young males from nigeria
+### Supported keywords
 
-### Get Single Profile
-GET /api/profiles/:id
+Gender: male, males, man, men, boy, boys, guy, guys, female, females, woman, women, girl, girls
 
-### Create Profile
-POST /api/profiles
+Age groups: child, children, teenager, teenagers, adult, adults, senior, seniors
+
+Age ranges:
+- "young" → min_age=16, max_age=24
+- "above/over X" → min_age=X
+- "below/under X" → max_age=X
+
+Countries: nigeria (NG), kenya (KE), ghana (GH), tanzania (TZ), uganda (UG), angola (AO), cameroon (CM), ethiopia (ET), senegal (SN), zimbabwe (ZW), south africa (ZA), ivory coast (CI), mali (ML), benin (BJ), togo (TG), rwanda (RW), zambia (ZM), mozambique (MZ), madagascar (MG), somalia (SO)
+
+### Limitations
+- Only 20 countries supported
+- No negations ("not from nigeria")
+- No multiple countries ("from nigeria or kenya")
+- No spelling correction
+- English only
+
+## Running Locally
+
+1. Clone the repo
+2. Install dependencies: `npm install`
+3. Create `.env` file with:
+   - DATABASE_URL
+   - CLIENT_ID
+   - CLIENT_SECRET
+   - GITHUB_CALLBACK_URL
+   - JWT_SECRET
+   - WEB_URL
+4. Run seed: `node seed.js`
+5. Start server: `node main.js`
+
+## Live URL
+
+https://hng-stage1-backend-production-4bcf.up.railway.app
