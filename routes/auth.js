@@ -99,7 +99,7 @@ router.get("/github/callback", async (req, res) => {
        )
      }
 
-     // web portal redirect
+     // web portal redirect, to redirect
      return res.redirect(
       `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
       )
