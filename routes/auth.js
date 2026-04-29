@@ -42,9 +42,6 @@ router.get("/github/callback", async (req, res) => {
          },
          {headers: {Accept: "application/json"}}
         )
-        console.log('Token response status:', tokenRes.status)
-         console.log('Token response data:', tokenRes.data)
-
         const githubAccesstoken = tokenRes.data.access_token
         if(!githubAccesstoken) return res.status(401).json({
             status: "error",
@@ -99,16 +96,20 @@ router.get("/github/callback", async (req, res) => {
        )
      }
 
-        return res.status(200).json({
-            status: "success",
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            user: {
-                id: user.id,
-                username: user.username,
-                role: user.role
-            }
-        })
+     // web portal redirect
+ return res.redirect(
+    `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
+ )
+        // return res.status(200).json({
+        //     status: "success",
+        //     access_token: accessToken,
+        //     refresh_token: refreshToken,
+        //     user: {
+        //         id: user.id,
+        //         username: user.username,
+        //         role: user.role
+        //     }
+        // })
     }catch(err){
         console.log(err.message)
         return res.status(500).json({
