@@ -97,19 +97,22 @@ router.get("/github/callback", async (req, res) => {
      }
 
      // web portal redirect
-     return res.redirect(
-      `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
-      )
-        // return res.status(200).json({
-        //     status: "success",
-        //     access_token: accessToken,
-        //     refresh_token: refreshToken,
-        //     user: {
-        //         id: user.id,
-        //         username: user.username,
-        //         role: user.role
-        //     }
-        // })
+     if(state === 'web'){
+        return res.redirect(
+            `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
+        )
+     }
+     
+        return res.status(200).json({
+            status: "success",
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role
+            }
+        })
     }catch(err){
         console.log("error msg", err.message)
         console.log('Full error:', err.response?.data || err.message)
