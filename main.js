@@ -559,7 +559,20 @@ app.get("/api/profiles/:id", async(req, res) => {
         })
     }
 })
-
+app.get('/api/users/me', async (req, res) => {
+    return res.status(200).json({
+        status: 'success',
+        data: {
+            id: req.user.id,
+            username: req.user.username,
+            email: req.user.email,
+            role: req.user.role,
+            avatar_url: req.user.avatar_url,
+            is_active: req.user.is_active,
+            created_at: req.user.created_at
+        }
+    })
+})
 // delete a profile
 app.delete("/api/profiles/:id", requireAdmin, async(req,res) => {
     const {id} = req.params

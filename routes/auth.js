@@ -120,6 +120,45 @@ router.get("/github/callback", async (req, res) => {
     }
 })
 
+router.post('/token', async (req, res) => {
+    const { username, password } = req.body
+    // for testing - return tokens for a user
+    try {
+        const user = await pool.query(
+            'SELECT * FROM users WHERE username = $1',
+            [username]
+        )
+        if (user.rows.length === 0) {
+            return res.status(401).json({
+                status: 'error',
+                message: 'User not found'
+            })
+        }
+        const accessToken = generateAccessToken(user.rows[0])
+        const refreshToken = generateRefreshToken(user.rows[0])
+        await pool.query(
+            `INSERT INTO refresh_tokens (id, user_id, token, expires_at)
+             VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+            [uuidv7(), user.rows[0].id, refreshToken]
+        )
+        return res.status(200).json({
+            status: 'success',
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            user: {
+                id: user.rows[0].id,
+                username: user.rows[0].username,
+                role: user.rows[0].role
+            }
+        })
+    } catch(err) {
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to generate token'
+        })
+    }
+})
+
 router.post("/refresh", async (req, res) => {
     const {refresh_token} = req.body
     if(!refresh_token) return res.status(400).json({
