@@ -112,6 +112,7 @@ router.get("/github/callback", async (req, res) => {
         // })
     }catch(err){
         console.log(err.message)
+        console.log('Full error:', err.response?.data || err.message)
         return res.status(500).json({
             status: 'error',
             message: 'Authentication failed'
