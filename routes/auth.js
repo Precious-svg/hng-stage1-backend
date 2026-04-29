@@ -42,7 +42,7 @@ router.get("/github/callback", async (req, res) => {
          },
          {headers: {Accept: "application/json"}}
         )
-        console.log('Step 1 - token response:', tokenRes.data)
+        console.log('Step 1 - token response provided:', tokenRes.data)
         const githubAccesstoken = tokenRes.data.access_token
         console.log('Step 2 - github token:', githubAccesstoken ? 'exists' : 'missing')
         if(!githubAccesstoken) return res.status(401).json({
