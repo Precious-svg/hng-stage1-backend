@@ -100,9 +100,9 @@ router.get("/github/callback", async (req, res) => {
      }
 
      // web portal redirect
- return res.redirect(
-    `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
- )
+     return res.redirect(
+      `${process.env.WEB_URL}/auth/callback?access_token=${accessToken}&refresh_token=${refreshToken}&username=${user.username}&role=${user.role}`
+      )
         // return res.status(200).json({
         //     status: "success",
         //     access_token: accessToken,
@@ -144,7 +144,7 @@ router.post("/refresh", async (req, res) => {
 
      if(new Date() > new Date(existing.rows[0].expires_at)){
         await pool.query(
-            `DELETE * FROM refresh_tokens WHERE token = $1`,
+            `DELETE FROM refresh_tokens WHERE token = $1`,
             [refresh_token]
         )
         return res.status(400).json({ 
@@ -167,6 +167,17 @@ router.post("/refresh", async (req, res) => {
     }
       const accessToken = generateAccessToken(user)
       const refreshToken = generateRefreshToken(user)
+      await pool.query(
+        `DELETE FROM refresh_tokens WHERE token = $1`,
+        [refresh_token]
+    )
+    
+    // store new refresh token
+    await pool.query(
+        `INSERT INTO refresh_tokens (id, user_id, token, expires_at)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+        [uuidv7(), user.id, refreshToken]
+    )
 
       return res.status(200).json({
         status: "success",
@@ -195,7 +206,7 @@ router.post("/logout", async (req, res) =>{
 
     try{
         await pool.query(
-            `DELETE * FROM refresh_tokens WHERE token = $1`,
+            `DELETE FROM refresh_tokens WHERE token = $1`,
             [refresh_token]
         )
 
