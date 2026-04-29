@@ -4,6 +4,8 @@ const {verifyToken} = require("../auth");
 async function authenticate(req, res, next){
     const authHeader = req.headers["authorization"]
     const token = authHeader && authHeader.split(' ')[1]
+    console.log('Auth header:', authHeader ? 'exists' : 'missing')
+    console.log('Token:', token ? 'exists' : 'missing')
     try{
         if(!token) return res.status(401).json({
             status: "error",
