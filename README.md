@@ -119,3 +119,15 @@ Countries: nigeria (NG), kenya (KE), ghana (GH), tanzania (TZ), uganda (UG), ang
 ## Live URL
 
 https://hng-stage1-backend-production-4bcf.up.railway.app
+
+GET  /api/profiles
+GET  /api/profiles?gender=male&country_id=NG
+GET  /api/profiles/search?q=young males from nigeria
+GET  /api/profiles/export?format=csv
+GET  /api/profiles/:id
+POST /api/profiles (admin) → success
+POST /api/profiles (analyst token) → 403
+DELETE /api/profiles/:id (admin) → 204
+GET  /api/users/me
+POST /auth/refresh
+POST /auth/logout

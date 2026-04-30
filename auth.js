@@ -9,7 +9,7 @@ function generateAccessToken (user) {
     return jwt.sign(
         {id: user.id, role: user.role, username: user.username},
         JWT_SECRET,
-        {expiresIn: "3m"}
+        {expiresIn: "30m"}
     )
 }
 
@@ -17,7 +17,7 @@ function generateRefreshToken(user)  {
     return jwt.sign(
         {id: user.id, role: user.role, username: user.username},
         JWT_SECRET,
-        {expiresIn: "5m"}
+        {expiresIn: "45m"}
     )
 }
 
