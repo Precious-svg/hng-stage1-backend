@@ -1,3 +1,5 @@
+require("dotenv").config();
+const redis = require("./redis")
 const express = require("express");
 const cors = require("cors");
 const morgan = require('morgan')
@@ -9,8 +11,10 @@ const axios = require("axios")
 const { v7: uuidv7 } = require('uuid')
 const pool = require("./db");
 const { parse } = require("dotenv");
+const normalizeFilter = require("./utils/normalize")
+const csvIngester = require("./routes/csvSaver")
 const {authLimiter, apiLimiter} = require("./utils/rateLimiter")
-require("dotenv").config()
+
 
 const app = express();
 app.set('trust proxy', 1)
@@ -19,6 +23,7 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'))
 app.use("/auth", authLimiter, authRouter)
+app.use('/api/ingest', apiLimiter, authenticate, requireApiVersion, csvIngester)
 app.use("/api", apiLimiter, authenticate, requireApiVersion)
 
 
@@ -256,6 +261,16 @@ app.get("/api/profiles", async(req, res) => {
      query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
       
     try{
+
+        // cache key
+        const cacheKey = `profiles:${JSON.stringify(req.query)}`
+
+        // check redis first
+        const cached = await redis.get(cacheKey)
+      
+        if (cached) {
+           return res.status(200).json(JSON.parse(cached))
+        }
         const countResults = await pool.query(countQuery, [...params]);
         const total = parseInt(countResults.rows[0].count)
         const result = await pool.query(query, [...params, limitNum, offset]);
@@ -269,7 +284,7 @@ app.get("/api/profiles", async(req, res) => {
         console.log('First row:', result.rows[0])
         console.log('sortField:', sortField, 'sortOrder:', sortOrder)
         console.log('Final query:', query)
-        return res.status(200).json({
+        const response = {
             status: 'success',
             page: pageNum,
             limit: limitNum,
@@ -281,7 +296,10 @@ app.get("/api/profiles", async(req, res) => {
                 prev: pageNum > 1 ? `${baseUrl}?page=${pageNum - 1}&limit=${limitNum}${seperator}${queryString}` : null
             },
             data: result.rows.map(formatProfile)
-        })
+        }
+        // store in redis
+        await redis.set(cacheKey, JSON.stringify(response), 'EX', 300)
+        return res.status(200).json(response)
     }catch(err){
         console.log(err.message)
         return res.status(500).json({
@@ -413,13 +431,23 @@ app.get("/api/profiles/search", async(req, res) => {
     sqlQuery += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`
 
     try{
+
+        // build cache key from filters
+        const normalizedFilters = normalizeFilter(filters)
+        const cacheKey = `search:${JSON.stringify(normalizedFilters)}:page=${pageNum}:limit=${limitNum}`
+        console.log("normalized filters:", normalizedFilters)
+        // check redis first
+       const cached = await redis.get(cacheKey)
+       if (cached) {
+           return res.status(200).json(JSON.parse(cached))
+        }
         const countResult = await pool.query(countQuery, [...params])
         const total = parseInt(countResult.rows[0].count)
         const result = await pool.query(sqlQuery, [...params, limitNum, offset]);
         const baseUrl = "/api/profiles/search"
         const encoded = encodeURIComponent(q)
         const totalPages = Math.ceil(total/limitNum)
-        return res.status(200).json({
+        const response = {
             status: "success",
             page: pageNum,
             limit: limitNum,
@@ -431,7 +459,10 @@ app.get("/api/profiles/search", async(req, res) => {
                 prev: pageNum > 1 ?  `${baseUrl}?q=${encoded}&page=${pageNum - 1}&limit=${limitNum}`: null
             },
             data: result.rows.map(formatProfile)
-        })
+        }
+         // store in redis for 5 minutes
+         await redis.set(cacheKey, JSON.stringify(response), 'EX', 300)
+         return res.status(200).json(response)
     }catch(err){
         console.log(err.message)
         return res.status(500).json({
